@@ -1,3 +1,5 @@
+# encoding: UTF-8
+
 require "curb"
 require "redis"
 require "json"
@@ -81,7 +83,7 @@ class Cacho
         end
 
         curl.on_body do |string|
-          body << string
+          body << string.force_encoding(Encoding::UTF_8)
           string.bytesize
         end
 

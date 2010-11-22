@@ -1,3 +1,5 @@
+# encoding: UTF-8
+
 require "cutest"
 require "socket"
 require "mock_server"
@@ -36,6 +38,10 @@ mock_server do
     request.env.map do |name, value|
       "#{name}: #{value}"
     end.join("\n")
+  end
+
+  get "/utf" do
+    "Aló"
   end
 end
 
@@ -82,4 +88,11 @@ test "allows to pass custom HTTP headers" do
   _, _, body = Cacho.get("http://localhost:4000/echo", "Accept" => "text/plain")
 
   assert body =~ %r{HTTP_ACCEPT: text/plain}
+end
+
+test "accepts UTF-encoded bodies" do
+  _, _, body = Cacho.get("http://localhost:4000/utf")
+
+  assert body.include?("Aló")
+  assert body.encoding == Encoding::UTF_8
 end
