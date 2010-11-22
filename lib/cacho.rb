@@ -8,10 +8,22 @@ class Cacho
   VERSION = "0.0.1"
 
   def self.get(url, request_headers = {})
-    response = Local.get(url)
+    _request(:get, url, request_headers)
+  end
+
+  def self.head(url, request_headers = {})
+    _request(:head, url, request_headers)
+  end
+
+  def self.options(url, request_headers = {})
+    _request(:options, url, request_headers)
+  end
+
+  def self._request(verb, url, request_headers = {})
+    response = Local.send(verb, url)
 
     if response.nil?
-      response = Remote.get(url, Local.validation_for(url).merge(request_headers))
+      response = Remote.send(verb, url, Local.validation_for(url).merge(request_headers))
       Local.set(url, response)
     end
 
@@ -20,6 +32,18 @@ class Cacho
 
   class Local
     def self.get(url)
+      _request(:get, url)
+    end
+
+    def self.head(url)
+      _request(:head, url)
+    end
+
+    def self.options(url)
+      _request(:options, url)
+    end
+
+    def self._request(verb, url)
       expire, json = redis.hmget(url, :expire, :response)
 
       if json && (expire.nil? || Time.utc(expire) <= Time.now)
@@ -70,27 +94,43 @@ class Cacho
 
   class Remote
     def self.get(url, request_headers)
+      _request(:get, url, request_headers)
+    end
+
+    def self.head(url, request_headers)
+      _request(:head, url, request_headers)
+    end
+
+    def self.options(url, request_headers)
+      _request(:options, url, request_headers)
+    end
+
+    def self._request(verb, url, request_headers)
       status = nil
       headers = {}
       body = ""
 
-      Curl::Easy.http_get(url) do |curl|
-        curl.headers = request_headers
+      curl = Curl::Easy.new(url)
 
-        curl.on_header do |header|
-          headers.store(*header.rstrip.split(": ", 2)) if header.include?(":")
-          header.bytesize
-        end
+      curl.headers = request_headers
 
-        curl.on_body do |string|
-          body << string.force_encoding(Encoding::UTF_8)
-          string.bytesize
-        end
-
-        curl.on_complete do |response|
-          status = response.response_code
-        end
+      curl.on_header do |header|
+        headers.store(*header.rstrip.split(": ", 2)) if header.include?(":")
+        header.bytesize
       end
+
+      curl.on_body do |string|
+        body << string.force_encoding(Encoding::UTF_8)
+        string.bytesize
+      end
+
+      curl.on_complete do |response|
+        status = response.response_code
+      end
+
+      curl.head = verb == :head
+
+      curl.http(verb.to_s.upcase)
 
       if status == 301
         Local.get(url)
