@@ -31,6 +31,12 @@ mock_server do
       time.httpdate
     end
   end
+
+  get "/echo" do
+    request.env.map do |name, value|
+      "#{name}: #{value}"
+    end.join("\n")
+  end
 end
 
 prepare do
@@ -70,4 +76,10 @@ test "performs conditional GETs" do
   _, _, t2 = Cacho.get("http://localhost:4000/etag")
 
   assert_equal t1, t2
+end
+
+test "allows to pass custom HTTP headers" do
+  _, _, body = Cacho.get("http://localhost:4000/echo", "Accept" => "text/plain")
+
+  assert body =~ %r{HTTP_ACCEPT: text/plain}
 end

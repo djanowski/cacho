@@ -3,11 +3,11 @@ require "redis"
 require "json"
 
 class Cacho
-  def self.get(url)
+  def self.get(url, request_headers = {})
     response = Local.get(url)
 
     if response.nil?
-      response = Remote.get(url, Local.validation_for(url))
+      response = Remote.get(url, Local.validation_for(url).merge(request_headers))
       Local.set(url, response)
     end
 
