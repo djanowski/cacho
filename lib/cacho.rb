@@ -46,7 +46,7 @@ class Cacho
     def self._request(verb, url)
       expire, json = redis.hmget(url, :expire, :response)
 
-      if json && (expire.nil? || Time.utc(expire) <= Time.now)
+      if json && (expire.nil? || expire.to_i >= Time.now.to_i)
         JSON.parse(json)
       end
     end
@@ -132,7 +132,7 @@ class Cacho
 
       curl.http(verb.to_s.upcase)
 
-      if status == 301
+      if status == 304
         Local.get(url)
       else
         [status, headers, body]

@@ -10,7 +10,7 @@ include MockServer::Methods
 
 mock_server do
   get "/cacheable" do
-    response.headers["Cache-Control"] = "public, max-age=1"
+    response.headers["Cache-Control"] = "public, max-age=2"
     response.headers["Content-Type"] = "text/plain"
     Time.now.httpdate
   end
@@ -22,7 +22,7 @@ mock_server do
 
   get "/etag" do
     if request.env["HTTP_IF_MODIFIED_SINCE"]
-      halt 301
+      halt 304
     else
       time = Time.now
 
@@ -76,6 +76,8 @@ test "caches cacheable responses" do
   assert_equal headers["Content-Type"], "text/plain"
 
   t1 = body
+
+  sleep 1
 
   status, headers, body = Cacho.get("http://localhost:4000/cacheable")
 
