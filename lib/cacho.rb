@@ -3,6 +3,8 @@ require "redis"
 require "json"
 
 class Cacho
+  VERSION = "0.0.1"
+
   def self.get(url, request_headers = {})
     response = Local.get(url)
 
