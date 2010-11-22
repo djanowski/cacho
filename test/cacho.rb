@@ -9,10 +9,12 @@ require File.expand_path("../lib/cacho", File.dirname(__FILE__))
 include MockServer::Methods
 
 mock_server do
-  get "/cacheable" do
-    response.headers["Cache-Control"] = "public, max-age=2"
-    response.headers["Content-Type"] = "text/plain"
-    Time.now.httpdate
+  %w(GET OPTIONS).each do |method|
+    route method, "/cacheable" do
+      response.headers["Cache-Control"] = "public, max-age=2"
+      response.headers["Content-Type"] = "text/plain"
+      Time.now.httpdate
+    end
   end
 
   get "/non-cacheable" do
@@ -26,12 +28,26 @@ mock_server do
     else
       time = Time.now
 
-      response.headers["Etag"] = time.hash.to_s
+      response.headers["ETag"] = time.hash.to_s
       response.headers["Last-Modified"] = time.httpdate
       response.headers["Content-Type"] = "text/plain"
 
       time.httpdate
     end
+  end
+
+  get "/changing-etag" do
+    if request.env["HTTP_IF_MODIFIED_SINCE"]
+      time = Time.parse(request.env["HTTP_IF_MODIFIED_SINCE"]) + 1
+    else
+      time = Time.now
+
+      response.headers["ETag"] = time.hash.to_s
+      response.headers["Last-Modified"] = time.httpdate
+      response.headers["Content-Type"] = "text/plain"
+    end
+
+    time.httpdate
   end
 
   get "/utf" do
@@ -90,6 +106,17 @@ test "caches cacheable responses" do
   assert body > t1
 end
 
+test "varies cache by HTTP method" do
+  status1, _, body1 = Cacho.get("http://localhost:4000/cacheable")
+  sleep 1
+  status2, _, body2 = Cacho.options("http://localhost:4000/cacheable")
+
+  assert status1 == 200
+  assert status2 == 200
+
+  assert body2 > body1
+end
+
 test "does not cache non-cacheable responses" do
   _, _, t1 = Cacho.get("http://localhost:4000/non-cacheable")
   sleep 1
@@ -104,6 +131,11 @@ test "performs conditional GETs" do
   _, _, t2 = Cacho.get("http://localhost:4000/etag")
 
   assert_equal t1, t2
+
+  _, _, t1 = Cacho.get("http://localhost:4000/changing-etag")
+  _, _, t2 = Cacho.get("http://localhost:4000/changing-etag")
+
+  assert t2 > t1
 end
 
 test "allows to pass custom HTTP headers" do

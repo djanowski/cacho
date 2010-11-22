@@ -1,8 +1,7 @@
 # encoding: UTF-8
 
 require "curb"
-require "redis"
-require "json"
+require "nest"
 
 class Cacho
   VERSION = "0.0.1"
@@ -20,92 +19,86 @@ class Cacho
   end
 
   def self._request(verb, url, request_headers = {})
-    response = Local.send(verb, url)
+    local = Local[verb, url]
 
-    if response.nil?
-      response = Remote.send(verb, url, Local.validation_for(url).merge(request_headers))
-      Local.set(url, response)
+    unless local.fresh?
+      remote = Remote.request(verb, url, local.build_headers.merge(request_headers))
+
+      local.set(remote) if remote
     end
 
-    response
+    local.response
   end
 
   class Local
-    def self.get(url)
-      _request(:get, url)
+    attr :etag
+    attr :last_modified
+    attr :expire
+    attr :response
+
+    def initialize(key)
+      @key = key
+      @etag, @last_modified, @expire, @response = @key.hmget(:etag, :last_modified, :expire, :response)
+      @response = JSON.parse(@response) if @response
     end
 
-    def self.head(url)
-      _request(:head, url)
+    def self.[](verb, url)
+      new(Nest.new(verb)[url])
     end
 
-    def self.options(url)
-      _request(:options, url)
+    def expire_in(ttl)
+      @expire = (Time.now + ttl).to_i
     end
 
-    def self._request(verb, url)
-      expire, json = redis.hmget(url, :expire, :response)
-
-      if json && (expire.nil? || expire.to_i >= Time.now.to_i)
-        JSON.parse(json)
-      end
-    end
-
-    def self.set(url, response)
-      return unless cacheable?(response)
-
-      _, headers, _ = response
-
-      fields = {}
-
-      if headers["Cache-Control"]
-        ttl = headers["Cache-Control"][/max\-age=(\d+)/, 1].to_i
-
-        fields[:expire] = (Time.now + ttl).to_i
-      end
-
-      fields[:response] = response.to_json
-
-      fields[:etag] = headers["Etag"]
-      fields[:last_modified] = headers["Last-Modified"]
-
-      redis.hmset(url, *fields.to_a.flatten)
-    end
-
-    def self.validation_for(url)
-      etag, last_modified = redis.hmget(url, :etag, :last_modified)
-
+    def build_headers
       {}.tap do |headers|
         headers["If-None-Match"] = etag if etag
         headers["If-Modified-Since"] = last_modified if last_modified
       end
     end
 
-    def self.cacheable?(response)
-      status, headers, _ = response
+    def set(response)
+      @response = response
 
-      status == 200 && (headers["Cache-Control"] || headers["Etag"] || headers["Last-Modified"])
+      return unless cacheable?
+
+      _, headers, _ = response
+
+      if headers["Cache-Control"]
+        ttl = headers["Cache-Control"][/max\-age=(\d+)/, 1].to_i
+        expire_in(ttl)
+      end
+
+      @etag = headers["ETag"]
+      @last_modified = headers["Last-Modified"]
+
+      store
     end
 
-    def self.redis
-      Redis.current
+    def fresh?
+      expire && expire.to_i >= Time.now.to_i
+    end
+
+  protected
+
+    def cacheable?
+      status, headers, _ = response
+
+      status == 200 && (headers["Cache-Control"] || headers["ETag"] || headers["Last-Modified"])
+    end
+
+    def store
+      @key.hmset(
+        :etag, etag,
+        :last_modified, last_modified,
+        :expire, expire,
+        :response, response.to_json
+      )
     end
   end
 
   class Remote
-    def self.get(url, request_headers)
-      _request(:get, url, request_headers)
-    end
-
-    def self.head(url, request_headers)
-      _request(:head, url, request_headers)
-    end
-
-    def self.options(url, request_headers)
-      _request(:options, url, request_headers)
-    end
-
-    def self._request(verb, url, request_headers)
+    def self.request(verb, url, request_headers)
       status = nil
       headers = {}
       body = ""
@@ -132,11 +125,7 @@ class Cacho
 
       curl.http(verb.to_s.upcase)
 
-      if status == 304
-        Local.get(url)
-      else
-        [status, headers, body]
-      end
+      [status, headers, body] unless status == 304
     end
 
     def self.redis
