@@ -1,5 +1,6 @@
 # encoding: UTF-8
 
+require "json" unless defined?(JSON)
 require "curb"
 require "nest"
 
