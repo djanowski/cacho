@@ -89,12 +89,16 @@ class Cacho
     end
 
     def store
-      @key.hmset(
-        :etag, etag,
-        :last_modified, last_modified,
-        :expire, expire,
-        :response, response.to_json
-      )
+      fields = {response: response.to_json}
+
+      fields[:etag] = etag if etag
+      fields[:last_modified] = last_modified if last_modified
+      fields[:expire] = expire if expire
+
+      @key.redis.multi do
+        @key.del
+        @key.hmset(*fields.to_a.flatten)
+      end
     end
   end
 
