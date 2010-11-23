@@ -25,7 +25,7 @@ class Cacho
     unless local.fresh?
       remote = Remote.request(verb, url, local.build_headers.merge(request_headers))
 
-      local.set(remote) if remote
+      local.set(remote) unless remote.first == 304
     end
 
     local.response
@@ -126,11 +126,7 @@ class Cacho
 
       curl.http(verb.to_s.upcase)
 
-      [status, headers, body] unless status == 304
-    end
-
-    def self.redis
-      Redis.current
+      [status, headers, body]
     end
   end
 end
