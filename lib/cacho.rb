@@ -5,7 +5,7 @@ require "curb"
 require "nest"
 
 class Cacho
-  VERSION = "0.0.2"
+  VERSION = "0.0.3"
 
   def self.get(url, request_headers = {})
     _request(:get, url, request_headers)

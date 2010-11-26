@@ -7,6 +7,7 @@ Gem::Specification.new do |s|
   s.authors           = ["Damian Janowski", "Michel Martens"]
   s.email             = ["djanowski@dimaion.com", "michel@soveran.com"]
   s.homepage          = "http://github.com/djanowski/cacho"
+
   s.files = <%= Dir[
     "LICENSE",
     "README.markdown",
@@ -15,7 +16,7 @@ Gem::Specification.new do |s|
     "*.gemspec",
     "test/*.*"
   ].inspect %>
-  s.add_dependency "redis", "~> 2.1"
+
+  s.add_dependency "nest", "~> 1.0"
   s.add_dependency "curb", "~> 0.7"
-  s.add_dependency "mock-server", "~> 0.1"
 end
