@@ -138,6 +138,7 @@ class Cacho::Client
            Errno::ECONNRESET, \
            Errno::EHOSTUNREACH, \
            Errno::ENETUNREACH, \
+           Net::HTTP::Persistent::Error, \
            Errno::ETIMEDOUT
 
       retries += 1
