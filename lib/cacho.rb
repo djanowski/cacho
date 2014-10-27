@@ -1,136 +1,181 @@
-# encoding: UTF-8
-
-require "json" unless defined?(JSON)
-require "curb"
-require "nest"
+require "net/http/persistent"
+require "uri"
+require "zlib"
+require "json"
+require "stringio"
+require "csv"
+require "fileutils"
 
 class Cacho
-  VERSION = "0.0.3"
+  attr_accessor :hasher
 
-  def self.get(url, request_headers = {})
-    _request(:get, url, request_headers)
+  def initialize(*args)
+    @client = Client.new(*args)
+    @db = DB.new("~/.cacho/cache")
+    @hasher = -> *args { args }
   end
 
-  def self.head(url, request_headers = {})
-    _request(:head, url, request_headers)
-  end
-
-  def self.options(url, request_headers = {})
-    _request(:options, url, request_headers)
-  end
-
-  def self._request(verb, url, request_headers = {})
-    local = Local[verb, url]
-
-    unless local.fresh?
-      remote = Remote.request(verb, url, local.build_headers.merge(request_headers))
-
-      local.set(remote) unless remote.first == 304
-    end
-
-    local.response
-  end
-
-  class Local
-    attr :etag
-    attr :last_modified
-    attr :expire
-    attr :response
-
-    def initialize(key)
-      @key = key
-      @etag, @last_modified, @expire, @response = @key.hmget(:etag, :last_modified, :expire, :response)
-      @response = JSON.parse(@response) if @response
-    end
-
-    def self.[](verb, url)
-      new(Nest.new(verb)[url])
-    end
-
-    def expire_in(ttl)
-      @expire = (Time.now + ttl).to_i
-    end
-
-    def build_headers
-      {}.tap do |headers|
-        headers["If-None-Match"] = etag if etag
-        headers["If-Modified-Since"] = last_modified if last_modified
+  def request(verb, *args)
+    if verb == :get
+      @db.get(Digest::MD5.hexdigest(@hasher.(*args).inspect)) do
+        @client.request(verb, *args)
       end
-    end
-
-    def set(response)
-      @response = response
-
-      return unless cacheable?
-
-      _, headers, _ = response
-
-      if headers["Cache-Control"]
-        ttl = headers["Cache-Control"][/max\-age=(\d+)/, 1].to_i
-        expire_in(ttl)
-      end
-
-      @etag = headers["ETag"]
-      @last_modified = headers["Last-Modified"]
-
-      store
-    end
-
-    def fresh?
-      expire && expire.to_i >= Time.now.to_i
-    end
-
-  protected
-
-    def cacheable?
-      status, headers, _ = response
-
-      status == 200 && (headers["Cache-Control"] || headers["ETag"] || headers["Last-Modified"])
-    end
-
-    def store
-      fields = {response: response.to_json}
-
-      fields[:etag] = etag if etag
-      fields[:last_modified] = last_modified if last_modified
-      fields[:expire] = expire if expire
-
-      @key.redis.multi do
-        @key.del
-        @key.hmset(*fields.to_a.flatten)
-      end
+    else
+      @client.request(verb, *args)
     end
   end
+end
 
-  class Remote
-    def self.request(verb, url, request_headers)
-      status = nil
-      headers = {}
-      body = ""
+class Cacho::Client
+  Error = Class.new(StandardError)
+  NotFound = Class.new(Error)
 
-      curl = Curl::Easy.new(url)
+  def initialize(callbacks = {})
+    @http = Net::HTTP::Persistent.new
+    @callbacks = callbacks
+    @callbacks[:configure_http].(@http) if @callbacks[:configure_http]
+  end
 
-      curl.headers = request_headers
+  def request(verb, url, options = {})
+    query = options.fetch(:query, {}).dup
 
-      curl.on_header do |header|
-        headers.store(*header.rstrip.split(": ", 2)) if header.include?(":")
-        header.bytesize
+    @callbacks[:process_query].(query) if @callbacks[:process_query]
+
+    uri = URI(url)
+
+    uri.query = URI.encode_www_form(query) if query.size > 0
+
+    loop do
+      request = Net::HTTP.const_get(verb.capitalize).new(uri.request_uri)
+
+      @callbacks[:before_request].(request) if @callbacks[:before_request]
+
+      if options.include?(:headers)
+        options[:headers].each do |key, value|
+          request[key] = value
+        end
       end
 
-      curl.on_body do |string|
-        body << string.force_encoding(Encoding::UTF_8)
-        string.bytesize
+      request["Accept-Encoding"] = "gzip"
+
+      if verb == :post
+        post_data = options.fetch(:data)
+
+        case options[:content_type]
+        when :json
+          request["Content-Type"] = "application/json; charset=utf-8"
+          request.body = post_data.to_json
+        else
+          request.body = URI.encode_www_form(post_data)
+        end
       end
 
-      curl.on_complete do |response|
-        status = response.response_code
+      if options[:content_encoding] == :deflate
+        request["Content-Encoding"] = "deflate"
+
+        request.body = Zlib::Deflate.deflate(request.body)
       end
 
-      curl.head = verb == :head
+      $stderr.puts("-> #{verb.upcase} #{uri}")
 
-      curl.http(verb.to_s.upcase)
+      if verb_idempotent?(verb)
+        res = protect { @http.request(uri, request) }
+      else
+        res = @http.request(uri, request)
+      end
 
-      [status, headers, body]
+      body = res.body
+
+      if res["Content-Encoding"] == "gzip"
+        body = Zlib::GzipReader.new(StringIO.new(body)).read
+      end
+
+      if res["Content-Type"].start_with?("application/json")
+        parsed = JSON.parse(body)
+      else
+        parsed = body
+      end
+
+      if @callbacks[:rate_limit_detector]
+        if seconds = @callbacks[:rate_limit_detector].(res, body, parsed)
+          $stderr.puts("Rate limited for #{seconds} seconds.")
+          sleep(seconds)
+          next
+        end
+      end
+
+      case res.code
+      when "200"
+        return parsed
+      when "303"
+        raise "Redirected to #{res["Location"]}"
+      when "404"
+        return nil
+      else
+        raise "Got #{res.code}: #{body.inspect}"
+      end
+    end
+  end
+
+  def verb_idempotent?(verb)
+    verb == :get || verb == :head || verb == :options
+  end
+
+  def protect(options = {})
+    throttle = options.fetch(:throttle, 1)
+    maximum_retries = options.fetch(:retries, nil)
+    retries = 0
+
+    begin
+      result = yield
+
+      retries = 0
+
+      return result
+    rescue SocketError, \
+           EOFError, \
+           Errno::ECONNREFUSED, \
+           Errno::ECONNRESET, \
+           Errno::EHOSTUNREACH, \
+           Errno::ENETUNREACH, \
+           Errno::ETIMEDOUT
+
+      retries += 1
+
+      $stderr.puts("-> #{$!.class}: #{$!.message}")
+
+      sleep([retries ** 2 * throttle, 300].min)
+
+      retry if maximum_retries.nil? || retries < maximum_retries
+    end
+  end
+end
+
+class Cacho::DB
+  attr :path
+
+  def initialize(path)
+    @path = File.expand_path(path)
+
+    FileUtils.mkdir_p(@path)
+  end
+
+  def get(id)
+    id = Array(id).map { |x| x.to_s.gsub(":", "::") }.join(":")
+
+    doc_path = File.join(File.expand_path(@path), id.gsub("/", "_"))
+
+    if File.exist?(doc_path)
+
+      str = File.read(doc_path)
+
+      return Marshal.load(str)
+    else
+      value = yield
+
+      File.write(doc_path, Marshal.dump(value))
+
+      return value
     end
   end
 end

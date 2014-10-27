@@ -1,25 +1,33 @@
 Cacho
 =====
 
-Cache aware, Redis based HTTP client.
+A careless caching client optimized for scraping.
 
 Description
 -----------
 
-Cacho is a HTTP client that understands cache responses and stores results in Redis.
+Cacho is an HTTP client for scraping. It will do most of the things you want
+when scraping:
+
+* Follow redirects.
+* Set the `User-Agent` to a browser-like string.
+* Accept and process gzip encoding.
+* Detect when it's been rate limited and wait.
+* Retry on silly network errors.
+* Use persistent HTTP connections.
+
+Most importantly, Cacho will store responses on disk so that multiple runs of
+your script will not hit the endpoints you are scraping. This prevents being
+rate limited and also makes your script faster every time.
 
 Usage
 -----
 
-When you try to GET a remote resource, Cacho proxies the request to the original server
-and returns an array of status, headers and body. If possible, it will also store the
-response and serve it in subsequent requests.
+    require "cacho"
 
-    status, headers, body = Cacho.get("http://localhost:4000/cacheable")
+    client = Cacho.new
 
-You can also supply custom headers:
-
-    status, headers, body = Cacho.get("http://localhost:4000/echo", "Accept" => "text/plain")
+    res = client.request(:get, "https://news.ycombinator.com")
 
 Installation
 ------------
@@ -29,25 +37,4 @@ Installation
 License
 -------
 
-Copyright (c) 2010 Damian Janowski  & Michel Martens
-
-Permission is hereby granted, free of charge, to any person
-obtaining a copy of this software and associated documentation
-files (the "Software"), to deal in the Software without
-restriction, including without limitation the rights to use,
-copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the
-Software is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
-OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
-HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-OTHER DEALINGS IN THE SOFTWARE.
+See the `UNLICENSE`.
