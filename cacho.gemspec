@@ -7,8 +7,7 @@ Gem::Specification.new do |s|
   s.email             = ["djanowski@dimaion.com", "michel@soveran.com"]
   s.homepage          = "http://github.com/djanowski/cacho"
 
-  s.files = ["LICENSE", "Rakefile", "lib/cacho.rb", "cacho.gemspec", "test/cacho.rb"]
+  s.files = ["LICENSE", "Rakefile", "lib/cacho.rb", "cacho.gemspec"]
 
-  s.add_dependency "nest", "~> 1.0"
-  s.add_dependency "curb", "~> 0.7"
+  s.add_dependency "net-http-persistent"
 end
