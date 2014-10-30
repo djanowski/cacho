@@ -19,7 +19,9 @@ class Cacho
 
   def request(verb, *args)
     if verb == :get
-      @db.get(Digest::MD5.hexdigest(@hasher.(*args).inspect)) do
+      uri = @client.uri(*args)
+
+      @db.get(verb, uri) do
         @client.request(verb, *args)
       end
     else
@@ -38,7 +40,7 @@ class Cacho::Client
     @callbacks[:configure_http].(@http) if @callbacks[:configure_http]
   end
 
-  def request(verb, url, options = {})
+  def uri(url, options = {})
     query = options.fetch(:query, {}).dup
 
     @callbacks[:process_query].(query) if @callbacks[:process_query]
@@ -46,6 +48,12 @@ class Cacho::Client
     uri = URI(url)
 
     uri.query = URI.encode_www_form(query) if query.size > 0
+
+    uri
+  end
+
+  def request(verb, url, options = {})
+    uri = self.uri(url, options)
 
     loop do
       request = Net::HTTP.const_get(verb.capitalize).new(uri.request_uri)
@@ -169,13 +177,18 @@ class Cacho::DB
     FileUtils.mkdir_p(@path)
   end
 
-  def get(id)
-    id = Array(id).map { |x| x.to_s.gsub(":", "::") }.join(":")
+  def get(verb, uri)
+    parts = [
+      "#{uri.host}-#{uri.port}",
+      verb.to_s,
+      Digest::MD5.hexdigest(uri.to_s)
+    ]
 
-    doc_path = File.join(File.expand_path(@path), id.gsub("/", "_"))
+    doc_path = File.join(@path, *parts)
+
+    FileUtils.mkdir_p(File.dirname(doc_path)) if doc_path.start_with?(@path)
 
     if File.exist?(doc_path)
-
       str = File.read(doc_path)
 
       return Marshal.load(str)
