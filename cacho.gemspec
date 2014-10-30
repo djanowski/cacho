@@ -5,8 +5,8 @@ Gem::Specification.new do |s|
   s.version           = Cacho::VERSION
   s.summary           = "A careless caching client optimized for scraping."
   s.description       = "A careless caching client optimized for scraping."
-  s.authors           = ["Damian Janowski", "Michel Martens"]
-  s.email             = ["djanowski@dimaion.com", "michel@soveran.com"]
+  s.authors           = ["Damian Janowski", "Martín Sarsale"]
+  s.email             = ["djanowski@dimaion.com", "martin.sarsale@gmail.com"]
   s.homepage          = "https://github.com/djanowski/cacho"
 
   s.files = `git ls-files`.lines.to_a.map(&:chomp)
