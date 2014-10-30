@@ -7,6 +7,8 @@ require "csv"
 require "fileutils"
 
 class Cacho
+  VERSION = "0.1.0"
+
   attr_accessor :hasher
 
   def initialize(*args)
