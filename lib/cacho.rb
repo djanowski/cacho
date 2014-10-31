@@ -100,7 +100,7 @@ class Cacho::Client
         body = Zlib::GzipReader.new(StringIO.new(body)).read
       end
 
-      if res["Content-Type"].start_with?("application/json")
+      if res["Content-Type"] && res["Content-Type"].start_with?("application/json")
         parsed = JSON.parse(body)
       else
         parsed = body
