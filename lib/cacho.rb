@@ -7,7 +7,7 @@ require "csv"
 require "fileutils"
 
 class Cacho
-  VERSION = "0.1.0"
+  VERSION = "0.1.1"
 
   attr_accessor :hasher
 
