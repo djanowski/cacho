@@ -126,12 +126,11 @@ class Cacho::Client
         return parsed
       when "303" , "302" , "301"
         if res["Location"].to_s.index(/^https?:\/\//)
-          redirect_url = URI.escape(res["Location"])
+          uri = URI(res["Location"])
         else
-          redirect_url = @base_url, res["Location"]
+          uri = URI.join(uri, res["Location"])
         end
-        $stderr.write(" redirected to #{redirect_url}\n") 
-        uri = URI.join(redirect_url)
+        $stderr.puts("Redirected to #{res["Location"]} (#{uri})")
       when "404"
         return nil
       else
