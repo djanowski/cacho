@@ -100,10 +100,17 @@ class Cacho::Client
         body = Zlib::GzipReader.new(StringIO.new(body)).read
       end
 
-      if res["Content-Type"] && res["Content-Type"].start_with?("application/json")
-        parsed = JSON.parse(body)
-      else
-        parsed = body
+      if res["Content-Type"]
+        if charset = res["Content-Type"][/\bcharset=(.+)\b/, 1]
+          body.force_encoding(charset)
+          body.encode!(Encoding.default_external)
+        end
+
+        if res["Content-Type"].start_with?("application/json")
+          parsed = JSON.parse(body)
+        else
+          parsed = body
+        end
       end
 
       if @callbacks[:rate_limit_detector]
