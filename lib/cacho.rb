@@ -69,7 +69,7 @@ class Cacho::Client
       request["Accept-Encoding"] = "gzip"
 
       if verb == :post
-        post_data = options.fetch(:data)
+        post_data = options.fetch(:data, {})
 
         case options[:content_type]
         when :json
